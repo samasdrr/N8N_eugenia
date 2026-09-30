@@ -1,0 +1,27 @@
+
+# n8ncli ignored files
+.env
+n8n/config/sync-state.json
+n8n/config/unconfigured-credentials.json
+n8n/config/workflow-folders.json
+n8n/references/
+
+# cache local, regenere par n8ncli (duplique n8n/workflows/, source de derive)
+n8n/config/cache/
+
+# ---------------------------------------------------------------------------
+# Elements prives - NE PAS VERSIONNER
+# ---------------------------------------------------------------------------
+
+# Config liee a ton instance : contient le projectId n8n de ton compte.
+# Apres clonage, tu dois lancer `n8ncli init` pour regenerer ce fichier.
+n8n/config/n8n-cli.json
+
+# Brouillons de travail : ils embarquent des identifiants n8n et des
+# identifiants de spreadsheets Google reels.
+n8n/workflows/Sandbox/
+n8n/workflows/My workflow 2.workflow.ts
+
+# Ancien brouillon remplace, casse (60 appels Apify par run, pas de Drive).
+# A supprimer aussi dans l'UI n8n.
+n8n/workflows/Recherche et suivi des offres d’emploi avec Gemini.workflow.ts

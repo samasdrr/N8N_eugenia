@@ -1,0 +1,9 @@
+{
+  "grid": 20,
+  "nodesep": 80,
+  "ranksep": 120,
+  "alignment": "center",
+  "alignTerminalNodes": true,
+  "subnodeSep": 160,
+  "subnodeHorizontalSep": 80
+}
