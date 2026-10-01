@@ -1,0 +1,45 @@
+{
+  "_comment": [
+    "Pin data pour tester Essai_RAG sans PDF et sans credentials Supabase.",
+    "Dans l'UI n8n : ouvre le workflow, selectionne chaque noeud, menu '...' > Pin data, colle la sortie ci-dessous.",
+    "Le noeud Convertir le PDF en Markdown s'execute pour de vrai : c'est lui qu'on verifie.",
+    "Source du texte : Montesquieu, L'Esprit des lois, Livre IV, chapitre I (1748, domaine public)."
+  ],
+  "noeuds": {
+    "Envoyer le PDF du livre": [
+      {
+        "json": {
+          "livre": [
+            {
+              "filename": "montesquieu.md.pdf",
+              "mimetype": "application/pdf",
+              "size": 254869
+            }
+          ],
+          "submittedAt": "2026-09-30T19:05:00.000+02:00",
+          "formMode": "test"
+        }
+      }
+    ],
+    "Extraire le texte du PDF": [
+      {
+        "json": {
+          "numpages": 4,
+          "numrender": 4,
+          "info": {
+            "Title": "L'Esprit des Lois T.IV",
+            "Author": "Samantha ASDRUBAL",
+            "Producer": "Microsoft: Print To PDF"
+          },
+          "text": [
+            "LIVRE IV\n\nCHAPITRE I\n\nDES LOIS POSITIVES\n\nLe despotisme ne peut avoir de frontieres. Il ne peut\npoint arreter le progres de la propagation. Le prince\nne peut pas dire comme Pharaon : Opprimons-les avec\nsagesse. Il serait plutot reduit a former le souhait\nde Neron, que le genre humain n'eut qu'une tete.\n\n28\n\nL'ESPRIT DES LOIS",
+            "L'ESPRIT DES LOIS\n\nMalgre la tyrannie, la Chine, par la force du climat, se peuplera\ntoujours, et triomphera de la tyrannie.\n\nLa Chine, comme tous les pays ou croit le riz, est sujette a des\nfamines frequentes. Lorsque le peuple meurt de faim, il se disperse\npour chercher de quoi vivre ; il se forme de toutes parts des bandes\nde trois, quatre ou cinq voleurs. La plupart sont d'abord exterminees ;\nd'autres se grossissent et sont exterminees encore. Mais, dans un si\ngrand nombre de provinces, et si eloignees, il peut arriver que quelque\ntroupe fasse fortune. Elle se maintient, se fortifie, se forme en corps\nd'armee, va droit a la capitale, et le chef monte sur le trone.\n\nTelle est la nature de la chose, que le mauvais gouvernement y est\nd'abord puni. Le desordre y nait soudain, parce que ce peuple prodigious\n\n28\n\nL'ESPRIT DES LOIS",
+            "L'ESPRIT DES LOIS\n\ny manque de substance. Ce qui fait que, dans d'autres pays, on revient\nsi difficilement des abus, c'est qu'ils n'y ont pas des effets sensibles ;\nle prince n'y est pas averti d'une maniere prompte et eclatante, comme\nil l'est a la Chine.\n\nIl ne retirera point, comme nos princes, que, s'il gouverne mal, il sera\nmoins heureux dans l'autre vie, moins puissant et moins riche dans\ncelle-ci. Il saura que, si son gouvernement n'est pas bon, il perdra\nl'empire et la vie.\n\nComme, malgre les expositions d'enfants, le peuple augmente toujours a\nla Chine, il faut un travail infatigable pour faire produire aux terres de\nquoi le nourrir : cela demande une grande attention de la part du\ngouvernement. Il est a tous les instants interesse a ce que tout le monde\n\n29\n\nL'ESPRIT DES LOIS",
+            "L'ESPRIT DES LOIS\n\npuisse travailler sans crainte d'etre frustre de ses peines. Ce doit moins\netre un gouvernement civil qu'un gouvernement domestique.\n\nVoila ce qui a produit les reglements dont on parle tant. On a voulu faire\nregner les lois avec le despotisme ; mais ce qui est joint avec le\ndespotisme n'a plus de force. En vain ce despotisme, presse par ses\nmalheurs, a-t-il voulu s'enchainer ; il s'arme de ses chaines, et devient\nplus terrible encore.\n\nLa Chine est donc un Etat despotique, dont le principe est la crainte.\nPeut-etre que dans les premieres dynasties, l'empire n'etant pas si\netendu, le gouvernement declinait un peu de cet esprit. Mais aujourd'hui\ncela n'est pas.\n\n30\n\nL'ESPRIT DES LOIS"
+          ],
+          "version": "5.4.296"
+        }
+      }
+    ]
+  }
+}
