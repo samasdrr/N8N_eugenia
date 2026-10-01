@@ -87,17 +87,17 @@ const recherche_mots_cles = node({
         'from (\n' +
         '  select id,\n' +
         '         left(content, 1200) as extrait,\n' +
-        "         ts_rank(to_tsvector('french', content),\n" +
-        "                  websearch_to_tsquery('french', $1)) as rang\n" +
+        "         ts_rank(tsv, websearch_to_tsquery('french', $1)) as rang,\n" +
+        "         array_to_string(keywords, ', ') as mots_cles\n" +
         '  from documents_bourdieu\n' +
-        "  where to_tsvector('french', content) @@ websearch_to_tsquery('french', $1)\n" +
+        "  where tsv @@ websearch_to_tsquery('french', $1)\n" +
         '  order by rang desc\n' +
         '  limit 6\n' +
         ') t;',
       options: { queryReplacement: expr('{{ $json.chatInput }}') },
     },
     credentials: { postgres: newCredential('Postgres account') },
-    notes: 'Mots cles en complement du vecteur : la similarite rate les chaines de caracteres et les formulations atypiques, la recherche lexicale les rattrape. La question passe par $1 et non par une concatenation, donc aucune injection possible. json_agg garantit un seul resultat quel que soit le nombre de hits.',
+    notes: 'Mots cles en complement du vecteur : la similarite rate les chaines de caracteres et les formulations atypiques, la recherche lexicale les rattrape. La colonne tsv est stockee et indexee par la migration 002 : la requete passe par l index GIN au lieu de recalculer un tsvector sur chaque ligne a chaque question. La question passe par $1 et non par une concatenation, donc aucune injection possible. json_agg garantit un seul resultat quel que soit le nombre de hits.',
   },
 });
 
@@ -129,7 +129,7 @@ const fusion_hybride = node({
         '  const j = it.json || {};\n' +
         '  if (Array.isArray(j.hits)) {\n' +
         '    for (const h of j.hits) {\n' +
-        '      if (h && h.extrait) LEX.push({ id: h.id != null ? h.id : null, texte: String(h.extrait) });\n' +
+        '      if (h && h.extrait) LEX.push({ id: h.id != null ? h.id : null, texte: String(h.extrait), motsCles: h.mots_cles || null });\n' +
         '    }\n' +
         '    continue;\n' +
         '  }\n' +
@@ -159,7 +159,7 @@ const fusion_hybride = node({
         "    if (dejaLa) dejaLa.origine = 'les deux';\n" +
         '    continue;\n' +
         '  }\n' +
-        "  passages.push({ origine: 'mots-cles', id: l.id, ouvrage: null, texte: l.texte });\n" +
+        "  passages.push({ origine: 'mots-cles', id: l.id, ouvrage: null, motsCles: l.motsCles, texte: l.texte });\n" +
         '}\n' +
         '\n' +
         'const retenus = passages.slice(0, 8);\n' +
@@ -170,7 +170,7 @@ const fusion_hybride = node({
         '    nbMotsCles: LEX.length,\n' +
         '    nbPassages: retenus.length,\n' +
         '    semantiqueDisponible: VEC.length > 0,\n' +
-        '    passages: retenus.map((p, i) => ({ n: i + 1, origine: p.origine, id: p.id, ouvrage: p.ouvrage, texte: p.texte }))\n' +
+        '    passages: retenus.map((p, i) => ({ n: i + 1, origine: p.origine, id: p.id, ouvrage: p.ouvrage, motsCles: p.motsCles || null, texte: p.texte }))\n' +
         '  }\n' +
         '}];',
     },
