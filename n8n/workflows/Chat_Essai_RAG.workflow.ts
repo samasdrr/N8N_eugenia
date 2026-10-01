@@ -83,17 +83,7 @@ const recherche_mots_cles = node({
       operation: 'executeQuery',
       resource: 'database',
       query:
-        'select $1 as question, coalesce(json_agg(t), \'[]\'::json) as hits\n' +
-        'from (\n' +
-        '  select id,\n' +
-        '         left(content, 1200) as extrait,\n' +
-        "         ts_rank(tsv, websearch_to_tsquery('french', $1)) as rang,\n" +
-        "         array_to_string(keywords, ', ') as mots_cles\n" +
-        '  from documents_bourdieu\n' +
-        "  where tsv @@ websearch_to_tsquery('french', $1)\n" +
-        '  order by rang desc\n' +
-        '  limit 6\n' +
-        ') t;',
+        'with ns as (\n  select distinct u.lexeme\n  from unnest(to_tsvector(\'french\', $1)) as u(lexeme, positions, weights)\n),\nfreq as (\n  select ns.lexeme,\n         (select count(*) from documents_bourdieu d2\n           where d2.tsv @@ to_tsquery(\'french\', ns.lexeme)) as n\n  from ns\n),\ntot as (select count(*) as total from documents_bourdieu),\nq as (\n  select coalesce(\n           (select array_to_string(array_agg(lexeme order by n), \' | \')\n              from freq where n * 5 <= (select total from tot)),\n           (select array_to_string(array_agg(lexeme), \' | \') from freq)\n         ) as orq\n  from tot\n)\nselect $1 as question, coalesce(json_agg(t), \'[]\'::json) as hits\nfrom (\n  select d.id,\n         left(d.content, 1200) as extrait,\n         ts_rank(d.tsv, to_tsquery(\'french\', q.orq)) as rang,\n         array_to_string(d.keywords, \', \') as mots_cles,\n         row_number() over (\n           order by ts_rank(d.tsv, to_tsquery(\'french\', q.orq)) desc\n         ) as position\n  from documents_bourdieu d, q\n  where d.tsv @@ to_tsquery(\'french\', q.orq)\n  order by rang desc\n  limit 6\n) t;',
       options: { queryReplacement: expr('{{ $json.chatInput }}') },
     },
     credentials: { postgres: newCredential('Postgres account') },
@@ -109,71 +99,7 @@ const fusion_hybride = node({
     position: [720, 0],
     parameters: {
       jsCode:
-        '// Deux listes arrivent : les chunks vecteurs, et les hits lexicaux qui reviennent\n' +
-        '// sous forme d un seul item contenant un tableau. On les fusionne, on dedoublonne,\n' +
-        '// et un passage trouve par les deux voies est signale comme tel : c est le signal\n' +
-        '// de confiance le plus fort dont on dispose ici.\n' +
-        'const items = $input.all();\n' +
-        '// La question vient du trigger, mais l item qui porte les hits est celui de la\n' +
-        '// requete SQL : on la cherche dans tous les items, puis on se rabat sur la copie\n' +
-        '// que la requete renvoie dans sa colonne question.\n' +
-        "let question = '';\n" +
-        'for (const it of items) {\n' +
-        "  if (it.json && it.json.chatInput) { question = String(it.json.chatInput); break; }\n" +
-        '}\n' +
-        "if (!question && items[0] && items[0].json && items[0].json.question) question = String(items[0].json.question);\n" +
-        'const VEC = [];\n' +
-        'const LEX = [];\n' +
-        '\n' +
-        'for (const it of items) {\n' +
-        '  const j = it.json || {};\n' +
-        '  if (Array.isArray(j.hits)) {\n' +
-        '    for (const h of j.hits) {\n' +
-        '      if (h && h.extrait) LEX.push({ id: h.id != null ? h.id : null, texte: String(h.extrait), motsCles: h.mots_cles || null });\n' +
-        '    }\n' +
-        '    continue;\n' +
-        '  }\n' +
-        '  const doc = j.document || j;\n' +
-        '  const meta = doc.metadata || j.metadata || {};\n' +
-        "  const texte = doc.pageContent || doc.text || j.pageContent || j.text || j.content || '';\n" +
-        "  if (texte) VEC.push({ id: meta.id != null ? meta.id : null, texte: String(texte), ouvrage: meta.ouvrage || null });\n" +
-        '}\n' +
-        '\n' +
-        '// Les chunks vectoriels ne portent pas l id de ligne : on dedoublonne sur un\n' +
-        '// prefixe du texte, largement suffisant puisque les deux listes viennent du meme\n' +
-        '// texte source.\n' +
-        "const cle = (t) => t.replace(/\\s+/g, ' ').slice(0, 200);\n" +
-        'const vusLex = new Set();\n' +
-        'const passages = [];\n' +
-        'const touches = new Set();\n' +
-        '\n' +
-        'for (const v of VEC) {\n' +
-        '  const k = cle(v.texte);\n' +
-        '  touches.add(k);\n' +
-        "  passages.push({ origine: 'semantique', id: v.id, ouvrage: v.ouvrage, texte: v.texte });\n" +
-        '}\n' +
-        'for (const l of LEX) {\n' +
-        '  const k = cle(l.texte);\n' +
-        '  if (touches.has(k)) {\n' +
-        '    const dejaLa = passages.find((p) => cle(p.texte) === k);\n' +
-        "    if (dejaLa) dejaLa.origine = 'les deux';\n" +
-        '    continue;\n' +
-        '  }\n' +
-        "  passages.push({ origine: 'mots-cles', id: l.id, ouvrage: null, motsCles: l.motsCles, texte: l.texte });\n" +
-        '}\n' +
-        '\n' +
-        'const retenus = passages.slice(0, 8);\n' +
-        'return [{\n' +
-        '  json: {\n' +
-        '    question,\n' +
-        '    nbSemantique: VEC.length,\n' +
-        '    nbMotsCles: LEX.length,\n' +
-        '    nbPassages: retenus.length,\n' +
-        '    semantiqueDisponible: VEC.length > 0,\n' +
-        '    passages: retenus.map((p, i) => ({ n: i + 1, origine: p.origine, id: p.id, ouvrage: p.ouvrage, motsCles: p.motsCles || null, texte: p.texte }))\n' +
-        '  }\n' +
-        '}];',
-    },
+        '// Deux listes arrivent : les chunks vecteurs, et les hits lexicaux qui reviennent\n// sous forme d un seul item contenant un tableau.\n//\n// On ne peut pas classer les deux listes ensemble sur leurs scores : la similarite\n// cosinus et le ts_rank ne sont pas sur la meme echelle. Le reciprocal rank fusion\n// contourne le probleme en ne regardant que la POSITION de chaque document dans\n// chaque liste :\n//\n//     score(d) = somme de 1 / (60 + position) sur chaque liste ou d apparait\n//\n// Un document trouve par les deux voies cumule deux termes et remonte donc tout seul.\n// La constante 60 est la valeur classique de l article de reference : elle evite qu un\n// simple premier de liste ecrase un document bien classe dans l autre.\nconst K = 60;\n\nconst items = $input.all();\n// La question vient du trigger, mais l item qui porte les hits est celui de la requete\n// SQL : on la cherche dans tous les items, puis on se rabat sur la copie que la\n// requete renvoie dans sa colonne question.\nlet question = \'\';\nfor (const it of items) {\n  if (it.json && it.json.chatInput) { question = String(it.json.chatInput); break; }\n}\nif (!question && items[0] && items[0].json && items[0].json.question) question = String(items[0].json.question);\n\nconst VEC = [];\nconst LEX = [];\nfor (const it of items) {\n  const j = it.json || {};\n  if (Array.isArray(j.hits)) {\n    j.hits.forEach((h, i) => {\n      if (h && h.extrait) {\n        LEX.push({\n          id: h.id != null ? h.id : null,\n          texte: String(h.extrait),\n          motsCles: h.mots_cles || null,\n          origine: \'mots-cles\',\n          position: h.position || i + 1,\n        });\n      }\n    });\n    continue;\n  }\n  const doc = j.document || j;\n  const meta = doc.metadata || j.metadata || {};\n  const texte = doc.pageContent || doc.text || j.pageContent || j.text || j.content || \'\';\n  if (texte) {\n    VEC.push({\n      id: meta.id != null ? meta.id : null,\n      texte: String(texte),\n      ouvrage: meta.ouvrage || null,\n      origine: \'semantique\',\n      position: VEC.length + 1,\n    });\n  }\n}\n\n// Les chunks vectoriels ne portent pas l id de ligne : un passage est identifie par un\n// prefixe de son texte, largement suffisant puisque les deux listes viennent du meme\n// texte source.\nconst cle = (t) => t.replace(/\\s+/g, \' \').slice(0, 200);\n\nconst parCle = new Map();\nfunction accumuler(doc) {\n  const k = cle(doc.texte);\n  let p = parCle.get(k);\n  if (!p) {\n    p = {\n      texte: doc.texte,\n      id: doc.id != null ? doc.id : null,\n      ouvrage: doc.ouvrage || null,\n      motsCles: doc.motsCles || null,\n      origines: [],\n      positions: {},\n      score: 0,\n    };\n    parCle.set(k, p);\n  }\n  p.score += 1 / (K + doc.position);\n  p.origines.push(doc.origine);\n  p.positions[doc.origine] = doc.position;\n  if (p.id == null && doc.id != null) p.id = doc.id;\n  if (p.ouvrage == null && doc.ouvrage && doc.origine === \'semantique\') p.ouvrage = doc.ouvrage;\n  if (p.motsCles == null && doc.motsCles) p.motsCles = doc.motsCles;\n}\n\nfor (const d of VEC) accumuler(d);\nfor (const d of LEX) accumuler(d);\n\nconst classes = [...parCle.values()].sort((a, b) => b.score - a.score).slice(0, 8);\n\nconst passages = classes.map((p, i) => ({\n  n: i + 1,\n  origine: p.origines.length > 1 ? \'les deux\' : p.origines[0],\n  score: Math.round(p.score * 10000) / 10000,\n  positions: p.positions,\n  id: p.id,\n  ouvrage: p.ouvrage,\n  motsCles: p.motsCles,\n  texte: p.texte,\n}));\n\nreturn [{\n  json: {\n    question,\n    nbSemantique: VEC.length,\n    nbMotsCles: LEX.length,\n    nbPassages: passages.length,\n    nbFuscules: classes.filter((p) => p.origines.length > 1).length,\n    semantiqueDisponible: VEC.length > 0,\n    passages,\n  },\n}];'},
     notes: 'Fusion semantique + lexicale, dedup, plafond de 8 passages. Le champ origine indique au modele par quelle voie un passage est sorti.',
   },
 });
