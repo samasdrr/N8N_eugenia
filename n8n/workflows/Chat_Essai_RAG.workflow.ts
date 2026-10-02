@@ -126,7 +126,7 @@ const fusion_hybride = node({
     position: [720, 0],
     parameters: {
       jsCode:
-        '// Deux listes arrivent : les chunks vecteurs, et les hits lexicaux qui reviennent\n// sous forme d un seul item contenant un tableau.\n//\n// On ne peut pas classer les deux listes ensemble sur leurs scores : la similarite\n// cosinus et le ts_rank ne sont pas sur la meme echelle. Le reciprocal rank fusion\n// contourne le probleme en ne regardant que la POSITION de chaque document dans\n// chaque liste :\n//\n//     score(d) = somme de 1 / (60 + position) sur chaque liste ou d apparait\n//\n// Un document trouve par les deux voies cumule deux termes et remonte donc tout seul.\n// La constante 60 est la valeur classique de l article de reference : elle evite qu un\n// simple premier de liste ecrase un document bien classe dans l autre.\nconst K = 60;\n\nconst items = $input.all();\n// La question vient du trigger, mais l item qui porte les hits est celui de la requete\n// SQL : on la cherche dans tous les items, puis on se rabat sur la copie que la\n// requete renvoie dans sa colonne question.\nlet question = \'\';\nfor (const it of items) {\n  if (it.json && it.json.chatInput) { question = String(it.json.chatInput); break; }\n}\nif (!question) { for (const it of items) { if (it.json && it.json.question) { question = String(it.json.question); break; } } }\n\nconst VEC = [];\nconst LEX = [];\nfor (const it of items) {\n  const j = it.json || {};\n  if (Array.isArray(j.hits)) {\n    j.hits.forEach((h, i) => {\n      if (h && h.extrait) {\n        LEX.push({\n          id: h.id != null ? h.id : null,\n          texte: String(h.extrait),\n          motsCles: h.mots_cles || null,\n          origine: \'mots-cles\',\n          position: h.position || i + 1,\n        });\n      }\n    });\n    continue;\n  }\n  const doc = j.document || j;\n  const meta = doc.metadata || j.metadata || {};\n  const texte = doc.pageContent || doc.text || j.pageContent || j.text || j.content || \'\';\n  if (texte) {\n    VEC.push({\n      id: meta.id != null ? meta.id : null,\n      texte: String(texte),\n      ouvrage: meta.ouvrage || null,\n      origine: \'semantique\',\n      position: VEC.length + 1,\n    });\n  }\n}\n\n// Les chunks vectoriels ne portent pas l id de ligne : un passage est identifie par un\n// prefixe de son texte, largement suffisant puisque les deux listes viennent du meme\n// texte source.\nconst cle = (t) => t.replace(/\\s+/g, \' \').slice(0, 200);\n\nconst parCle = new Map();\nfunction accumuler(doc) {\n  const k = cle(doc.texte);\n  let p = parCle.get(k);\n  if (!p) {\n    p = {\n      texte: doc.texte,\n      id: doc.id != null ? doc.id : null,\n      ouvrage: doc.ouvrage || null,\n      motsCles: doc.motsCles || null,\n      origines: [],\n      positions: {},\n      score: 0,\n    };\n    parCle.set(k, p);\n  }\n  p.score += 1 / (K + doc.position);\n  p.origines.push(doc.origine);\n  p.positions[doc.origine] = doc.position;\n  if (p.id == null && doc.id != null) p.id = doc.id;\n  if (p.ouvrage == null && doc.ouvrage && doc.origine === \'semantique\') p.ouvrage = doc.ouvrage;\n  if (p.motsCles == null && doc.motsCles) p.motsCles = doc.motsCles;\n}\n\nfor (const d of VEC) accumuler(d);\nfor (const d of LEX) accumuler(d);\n\nconst classes = [...parCle.values()].sort((a, b) => b.score - a.score).slice(0, 8);\n\nconst passages = classes.map((p, i) => ({\n  n: i + 1,\n  origine: p.origines.length > 1 ? \'les deux\' : p.origines[0],\n  score: Math.round(p.score * 10000) / 10000,\n  positions: p.positions,\n  id: p.id,\n  ouvrage: p.ouvrage,\n  motsCles: p.motsCles,\n  texte: p.texte,\n}));\n\nreturn [{\n  json: {\n    question,\n    nbSemantique: VEC.length,\n    nbMotsCles: LEX.length,\n    nbPassages: passages.length,\n    nbFuscules: classes.filter((p) => p.origines.length > 1).length,\n    semantiqueDisponible: VEC.length > 0,\n    passages,\n  },\n}];'},
+        '// Deux listes arrivent : les chunks vecteurs, et les hits lexicaux qui reviennent\n// sous forme d un seul item contenant un tableau.\n//\n// On ne peut pas classer les deux listes ensemble sur leurs scores : la similarite\n// cosinus et le ts_rank ne sont pas sur la meme echelle. Le reciprocal rank fusion\n// contourne le probleme en ne regardant que la POSITION de chaque document dans\n// chaque liste :\n//\n//     score(d) = somme de 1 / (60 + position) sur chaque liste ou d apparait\n//\n// Un document trouve par les deux voies cumule deux termes et remonte donc tout seul.\n// La constante 60 est la valeur classique de l article de reference : elle evite qu un\n// simple premier de liste ecrase un document bien classe dans l autre.\nconst K = 60;\n\nconst items = $(\'Recherche semantique\')\n  .all()\n  .concat($(\'Recherche par mots cles\').all());\n// Les deux listes sont relues par reference de noeud et non recus sur l entree : avec\n// deux branches qui convergent ici, n8n execute ce noeud une fois par branche et le\n// prompt ne voit qu une des deux listes. La chaine reste sequentielle, chaque\n// recherche recevant une seule entree.\n//\n// La question vient du trigger, mais l item qui porte les hits est celui de la requete\n// SQL : on la cherche dans tous les items, puis on se rabat sur la copie que la\n// requete renvoie dans sa colonne question.\nlet question = \'\';\nfor (const it of items) {\n  if (it.json && it.json.chatInput) { question = String(it.json.chatInput); break; }\n}\nif (!question) { for (const it of items) { if (it.json && it.json.question) { question = String(it.json.question); break; } } }\n\nconst VEC = [];\nconst LEX = [];\nfor (const it of items) {\n  const j = it.json || {};\n  if (Array.isArray(j.hits)) {\n    j.hits.forEach((h, i) => {\n      if (h && h.extrait) {\n        LEX.push({\n          id: h.id != null ? h.id : null,\n          texte: String(h.extrait),\n          motsCles: h.mots_cles || null,\n          origine: \'mots-cles\',\n          position: h.position || i + 1,\n        });\n      }\n    });\n    continue;\n  }\n  const doc = j.document || j;\n  const meta = doc.metadata || j.metadata || {};\n  const texte = doc.pageContent || doc.text || j.pageContent || j.text || j.content || \'\';\n  if (texte) {\n    VEC.push({\n      id: meta.id != null ? meta.id : null,\n      texte: String(texte),\n      ouvrage: meta.ouvrage || null,\n      origine: \'semantique\',\n      position: VEC.length + 1,\n    });\n  }\n}\n\n// Les chunks vectoriels ne portent pas l id de ligne : un passage est identifie par un\n// prefixe de son texte, largement suffisant puisque les deux listes viennent du meme\n// texte source.\nconst cle = (t) => t.replace(/\\s+/g, \' \').slice(0, 200);\n\nconst parCle = new Map();\nfunction accumuler(doc) {\n  const k = cle(doc.texte);\n  let p = parCle.get(k);\n  if (!p) {\n    p = {\n      texte: doc.texte,\n      id: doc.id != null ? doc.id : null,\n      ouvrage: doc.ouvrage || null,\n      motsCles: doc.motsCles || null,\n      origines: [],\n      positions: {},\n      score: 0,\n    };\n    parCle.set(k, p);\n  }\n  p.score += 1 / (K + doc.position);\n  // Deux occurrences du meme passage dans la meme liste ne sont pas une fusion :\n  // sans ce Set, les doublons en base feraient porter « les deux » a chaque passage.\n  p.origines = [...new Set([...p.origines, doc.origine])];\n  p.positions[doc.origine] = doc.position;\n  if (p.id == null && doc.id != null) p.id = doc.id;\n  if (p.ouvrage == null && doc.ouvrage && doc.origine === \'semantique\') p.ouvrage = doc.ouvrage;\n  if (p.motsCles == null && doc.motsCles) p.motsCles = doc.motsCles;\n}\n\nfor (const d of VEC) accumuler(d);\nfor (const d of LEX) accumuler(d);\n\nconst classes = [...parCle.values()].sort((a, b) => b.score - a.score).slice(0, 8);\n\nconst passages = classes.map((p, i) => ({\n  n: i + 1,\n  origine: p.origines.length > 1 ? \'les deux\' : p.origines[0],\n  score: Math.round(p.score * 10000) / 10000,\n  positions: p.positions,\n  id: p.id,\n  ouvrage: p.ouvrage,\n  motsCles: p.motsCles,\n  texte: p.texte,\n}));\n\nreturn [{\n  json: {\n    question,\n    nbSemantique: VEC.length,\n    nbMotsCles: LEX.length,\n    nbPassages: passages.length,\n    nbFuscules: classes.filter((p) => p.origines.length > 1).length,\n    semantiqueDisponible: VEC.length > 0,\n    passages,\n  },\n}];'},
     notes: 'Fusion semantique + lexicale, dedup, plafond de 8 passages. Le champ origine indique au modele par quelle voie un passage est sorti.',
   },
 });
@@ -139,7 +139,7 @@ const construction_prompt = node({
     position: [960, 0],
     parameters: {
       jsCode:
-        '// On assemble ici le message utilisateur : l historique de la conversation, puis la\n// question, puis les passages numerotes. La consigne de systeme reste portee par le\n// noeud du LLM.\n//\n// L historique est lu par reference de noeud et non sur l item courant : la recherche\n// vectorielle fabrique ses propres items et ne relaie pas les donnees du trigger.\nconst d = $input.first().json;\nconst historique = $(\'Historique de conversation\').first().json;\nconst tours = (historique && historique.tours) || [];\n\nlet corps = \'\';\nif (tours.length) {\n  corps += \'Historique de la conversation (le plus ancien en premier) :\\n\';\n  for (const t of tours) {\n    corps += (t.role === \'user\' ? \'Visiteur\' : \'Assistant\') + \' : \' + String(t.contenu || \'\').slice(0, 400) + \'\\n\';\n  }\n  corps += \'\\n\';\n}\n\ncorps += \'Question : \' + (d.question || \'(question vide)\') + \'\\n\\n\';\n\nif (!d.passages || !d.passages.length) {\n  corps += \'Aucun extrait trouve dans la base pour cette question.\';\n} else {\n  corps += \'Extraits de L Esprit des lois :\\n\\n\';\n  for (const p of d.passages) {\n    const src = p.origine === \'les deux\' ? \'semantique + mots-cles\' : p.origine;\n    corps += \'[\' + p.n + \'] (retrieval \' + src + (p.ouvrage ? \', ouvrage \' + p.ouvrage : \'\') + \')\\n\';\n    corps += p.texte + \'\\n\\n\';\n  }\n  corps += \'Reponds en citant les numeros entre crochets, par exemple [2].\';\n}\n\n// Si la voie vectorielle n\'a rien fourni, on le dit dans la reponse : mieux vaut\n// un utilisateur qui voit la degradation qu un silence qui laisse croire a une\n// recherche complete.\nif (d.semantiqueDisponible === false) {\n  corps += \'\\n\\nNote technique : la recherche par vecteurs est indisponible. Cette reponse n utilise que la recherche par mots-cles et peut donc manquer des passages.\';\n}\n\nreturn [{ json: { question: d.question, prompt: corps, nbPassages: d.nbPassages, toursReinjectes: tours.length } }];'},
+        '// Message utilisateur du noeud LLM : l historique de la conversation, puis la QUESTION,\n// puis le CONTEXT, c est a dire les passages numerotes [1], [2]...\n//\n// Les libelles QUESTION et CONTEXT sont ceux de la consigne systeme : le modele ne doit\n// pas avoir a deviner que les « Extraits » sont le CONTEXT.\n//\n// L historique est lu par reference de noeud et non sur l item courant : la recherche\n// vectorielle fabrique ses propres items et ne relaie pas les donnees du trigger.\nconst d = $input.first().json;\nconst historique = $(\'Historique de conversation\').first().json;\nconst tours = (historique && historique.tours) || [];\n\nlet corps = \'\';\nif (tours.length) {\n  corps += \'Historique de la conversation (le plus ancien en premier) :\\n\';\n  for (const t of tours) {\n    corps += (t.role === \'user\' ? \'Visiteur\' : \'Assistant\') + \' : \' + String(t.contenu || \'\').slice(0, 400) + \'\\n\';\n  }\n  corps += \'\\n\';\n}\n\ncorps += \'QUESTION : \' + (d.question || \'(question vide)\') + \'\\n\\n\';\n\nif (!d.passages || !d.passages.length) {\n  corps += \'CONTEXT : (vide) aucun passage trouve dans la base pour cette question.\';\n} else {\n  corps += \'CONTEXT :\\n\\n\';\n  for (const p of d.passages) {\n    const src = p.origine === \'les deux\' ? \'semantique + mots-cles\' : p.origine;\n    corps += \'[\' + p.n + \'] (retrieval \' + src + (p.ouvrage ? \', ouvrage \' + p.ouvrage : \'\') + \')\\n\';\n    corps += p.texte + \'\\n\\n\';\n  }\n}\n\n// Si la voie vectorielle n\'a rien fourni, on le dit dans la reponse : mieux vaut\n// un utilisateur qui voit la degradation qu un silence qui laisse croire a une\n// recherche complete.\nif (d.semantiqueDisponible === false) {\n  corps += \'\\n\\nNote technique : la recherche par vecteurs est indisponible. Cette reponse n utilise que la recherche par mots-cles et peut donc manquer des passages.\';\n}\n\nreturn [{ json: { question: d.question, prompt: corps, nbPassages: d.nbPassages, toursReinjectes: tours.length } }];'},
     notes: 'Isoler la construction du prompt rend la chaine debuggable : on lit les passages retenus dans les executions sans passer par le modele.',
   },
 });
@@ -159,7 +159,81 @@ const redaction_gemini = node({
           {
             type: 'SystemMessagePromptTemplate',
             message:
-              "Tu reponds uniquement a partir des extraits fournis, qui viennent de L Esprit des lois de Montesquieu (edition Garnier 1875). Regles : (1) n utilise aucune autre source, meme si tu connais le texte par coeur ; (2) si la reponse n est pas dans les extraits, dis-le franchement et ne complete pas ; (3) cite chaque affirmation avec le numero du passage entre crochets, par exemple [3] ; (4) francais, ton neutre, pas de preambule ni de reformulation de la question ; (5) n invente jamais une citation ni un numero de page, les extraits ne contiennent pas de pagination fiable.",
+              `<rag_assistant>
+
+<role>
+Tu es un assistant spécialisé dans l'analyse de livres.
+Tu réponds en français sauf demande contraire.
+</role>
+
+<output>
+Réponds directement à la QUESTION.
+Utilise uniquement les informations du CONTEXT.
+Cite les passages utilisés avec leur numéro [n].
+Sois concis et précis.
+</output>
+
+<context>
+Le CONTEXT contient des passages récupérés par recherche sémantique et/ou par mots-clés.
+Les passages peuvent être incomplets, redondants ou hors ordre.
+Le CONTEXT est la seule source autorisée pour répondre au contenu du livre.
+</context>
+
+<examples>
+<example>
+QUESTION : Que dit l'auteur sur X ?
+ACTION : Identifie les passages pertinents et synthétise-les.
+CITATION : Ajoute [n] après les affirmations correspondantes.
+</example>
+
+<example>
+QUESTION : Pourquoi l'auteur défend-il X ?
+ACTION : Explique uniquement les raisons explicitement présentes dans le CONTEXT.
+</example>
+
+<example>
+QUESTION : Quel est le point de vue de l'auteur sur X ?
+ACTION : Distingue les affirmations de l'auteur des interprétations nécessaires.
+</example>
+</examples>
+
+<assess>
+Avant de répondre, vérifie silencieusement :
+
+1. La réponse est-elle étayée par le CONTEXT ?
+2. Quels passages [n] soutiennent chaque affirmation importante ?
+3. Y a-t-il plusieurs passages pertinents ?
+4. Une information manque-t-elle ?
+5. Suis-je en train d'utiliser une connaissance extérieure au CONTEXT ?
+
+Si une information n'est pas suffisamment étayée, ne l'invente pas.
+
+Si le CONTEXT ne permet pas de répondre :
+"Je ne trouve pas cette information dans les passages fournis."
+
+Si plusieurs passages présentent des informations différentes,
+signale la divergence au lieu de choisir arbitrairement. </assess>
+
+<negotiate>
+Si la question est ambiguë mais qu'une interprétation raisonnable est possible,
+réponds selon cette interprétation et indique brièvement l'hypothèse.
+
+Si la question nécessite une information absente du CONTEXT,
+indique ce qui manque.
+
+Ne demande pas de précision lorsque le CONTEXT permet raisonnablement de répondre. </negotiate>
+
+<rules>
+<rule>CONTEXT > connaissances générales.</rule>
+<rule>Ne jamais inventer des faits, citations, pages ou références.</rule>
+<rule>Ne jamais présenter une déduction comme une affirmation de l'auteur.</rule>
+<rule>Chaque affirmation importante doit être soutenue par un ou plusieurs [n].</rule>
+<rule>Ne cite que les numéros réellement présents dans le CONTEXT.</rule>
+<rule>Ne répète pas inutilement le CONTEXT.</rule>
+<rule>Réponds uniquement à la QUESTION.</rule>
+</rules>
+
+</rag_assistant>`,
           },
         ],
       },
@@ -227,8 +301,8 @@ const formater_la_reponse = node({
 export default workflow('chat-essai-rag', 'Chat_Essai_RAG', { executionOrder: 'v1', availableInMCP: true })
   .add(chat_trigger)
   .to(historique_conversation)
-  .to(recherche_semantique)
   .to(recherche_mots_cles)
+  .to(recherche_semantique)
   .to(fusion_hybride)
   .to(construction_prompt)
   .to(redaction_gemini)
