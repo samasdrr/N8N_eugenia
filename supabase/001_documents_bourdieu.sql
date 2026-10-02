@@ -12,7 +12,7 @@ create extension if not exists vector;
 
 -- 2. Table des chunks
 --    vector(3072) est impose par le modele d'embeddings utilise dans n8n :
---    models/gemini-embedding-001 sort du vecteur en 3072 dimensions, et le noeud
+--    models/gemini-embedding-2 sort du vecteur en 3072 dimensions (verifie le 2 octobre 2026 avec le credential Google Gemini du projet), et le noeud
 --    n'expose aucun reglage de dimension.
 --
 --    SCHEMA VERROILLE, A NE PAS MODIFIER SANS METTRE LE NOEUD A JOUR :
@@ -34,7 +34,7 @@ create table if not exists documents_bourdieu (
 --
 --    L'index HNSW de pgvector refuse plus de 2000 dimensions :
 --      ERROR: column cannot have more than 2000 dimensions for hnsw index
---    et gemini-embedding-001 en produit 3072. Impossible de concilier les deux.
+--    et gemini-embedding-2 en produit 3072. Impossible de concilier les deux.
 --    Le noeud PGVector ne cree aucun index de son cote, donc rien ne bute : seule
 --    une creation manuelle d'index echouerait.
 --

@@ -28,7 +28,9 @@ const embeddings_gemini = embedding({
   config: {
     name: 'Gemini Embeddings',
     position: [260, 200],
-    notes: 'Aucun modele en dur, exactement comme a l ingestion : c est le modele par defaut du noeud qui produit des vecteurs compatibles avec la colonne vector(3072). Changer ce modele ici rendrait la recherche silencieusement fausse.',
+    parameters: { modelName: 'models/gemini-embedding-2' },
+    credentials: { googlePalmApi: newCredential('Google Gemini(PaLM) Api account') },
+    notes: 'Meme credential et meme modele que le noeud d embeddings de l ingestion (Essai_RAG). Les credits gateway ne couvrent plus les embeddings : sans ce credential, la recherche vectorielle echoue en 404 sur gemini-embedding-001. Plus important : des vecteurs produits par deux modeles differents ne sont pas comparables, donc les deux noeuds doivent garder le meme modelName. Verifie le 2 octobre 2026 : ce modele sort un vecteur de 3072 dimensions, ce qui correspond a la colonne vector(3072).',
   },
 });
 
